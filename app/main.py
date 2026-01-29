@@ -32,19 +32,19 @@ def main_gui():
               command=calibration_tool.start_calibration, **btn_style).pack(pady=10)
 
     # 2. 手动调整黑边 (新添加)
-    tk.Button(root, text="📐 手动调整黑边区域", bg="#607D8B", fg="white",
+    tk.Button(root, text="📐 手动调整底部区域", bg="#607D8B", fg="white",
               command=adjust_black_border, **btn_style).pack(pady=10)
 
     # 3. 实时检测
-    tk.Button(root, text="🔍 开启实时监测", bg="#4CAF50", fg="white",
+    tk.Button(root, text="🔍 助听器托盘校准", bg="#4CAF50", fg="white",
               command=lambda: run_detection("detect"), **btn_style).pack(pady=10)
 
     # 4. 预览 Pink
-    tk.Button(root, text="显示 Pink 预览", bg="#E91E63", fg="white",
+    tk.Button(root, text="显示助听器托盘预览", bg="#E91E63", fg="white",
               command=lambda: run_detection("pink"), **btn_style).pack(pady=5)
 
     # 5. 预览 White
-    tk.Button(root, text="显示 White 预览", bg="#795548", fg="white",
+    tk.Button(root, text="显示充电盒托盘预览", bg="#795548", fg="white",
               command=lambda: run_detection("white"), **btn_style).pack(pady=5)
 
     # 状态栏
