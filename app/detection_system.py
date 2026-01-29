@@ -9,8 +9,8 @@ from PIL import Image, ImageTk
 
 # 配置常量
 PARAMS_FILE = "calibration_params.json"
-PINK_DATA = "contour_result.json"
-WHITE_DATA = "black_border.json"
+HEARING_AID_BORDER_DATA  = "hearing_aid_border.json"
+CHARGING_CASE_BORDER_DATA = "charging_case_border.json"
 
 
 class DetectionSystem:
@@ -98,12 +98,12 @@ class DetectionSystem:
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 frame = self.draw_pink(frame, target)
                 if target:
-                    with open(PINK_DATA, "w") as f:
+                    with open(HEARING_AID_BORDER_DATA , "w") as f:
                         json.dump({"contours": [{"bounding_rect": target}]}, f)
                     detection_success = True
                     self.is_running = False  # 自动停止
             else:
-                path = PINK_DATA if mode == "pink" else WHITE_DATA
+                path = HEARING_AID_BORDER_DATA  if mode == "pink" else CHARGING_CASE_BORDER_DATA
                 if os.path.exists(path):
                     with open(path, "r") as f:
                         for c in json.load(f).get("contours", []):

@@ -6,10 +6,10 @@ from tkinter import messagebox
 
 # 常量定义
 PARAMS_FILE = "calibration_params.json"
-WHITE_DATA = "black_border.json"
+CHARGING_CASE_BORDER_DATA = "charging_case_border.json"
 
 
-def adjust_black_border():
+def adjust_charging_case_border():
     # 1. 加载透视变换参数
     M = None
     size = (1920, 1080)
@@ -20,8 +20,8 @@ def adjust_black_border():
             size = tuple(d['cropped_size'])
 
     # 2. 读取当前坐标或设为默认值
-    if os.path.exists(WHITE_DATA):
-        with open(WHITE_DATA, "r") as f:
+    if os.path.exists(CHARGING_CASE_BORDER_DATA):
+        with open(CHARGING_CASE_BORDER_DATA, "r") as f:
             data = json.load(f)
             r = data["contours"][0]["bounding_rect"]
             x1, y1 = r[0], r[1]
@@ -100,7 +100,7 @@ def adjust_black_border():
                     "bounding_rect": [int(min_x), int(min_y), int(w), int(h)]
                 }]
             }
-            with open(WHITE_DATA, "w") as f:
+            with open(CHARGING_CASE_BORDER_DATA, "w") as f:
                 json.dump(save_data, f, indent=4)
             messagebox.showinfo("成功", f"黑边坐标已更新！\n起始点: {int(min_x)}, {int(min_y)}")
             break

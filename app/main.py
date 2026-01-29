@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 import threading
 import detection_system  # 确保你的检测类在这个文件里
-from border_adjuster import adjust_black_border
+from border_adjuster import adjust_charging_case_border
 import calibration_tool
 
 # 全局 root 变量，解决 Unresolved reference 报错
@@ -33,7 +33,7 @@ def main_gui():
 
     # 2. 手动调整黑边 (新添加)
     tk.Button(root, text="📐 手动调整底部区域", bg="#607D8B", fg="white",
-              command=adjust_black_border, **btn_style).pack(pady=10)
+              command=adjust_charging_case_border, **btn_style).pack(pady=10)
 
     # 3. 实时检测
     tk.Button(root, text="🔍 助听器托盘校准", bg="#4CAF50", fg="white",

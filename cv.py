@@ -34,7 +34,7 @@ WHITE_BORDER_THICKNESS = 5
 WHITE_GRID_COLOR = (255, 0, 0)
 WHITE_GRID_THICKNESS = 2
 
-WHITE_BORDER_JSON_PATH = "black_border.json"
+WHITE_BORDER_JSON_PATH = "charging_case_border.json"
 
 
 # ===================== 核心函数：移除畸变逻辑 =====================
@@ -128,7 +128,7 @@ def detect_contours_by_ratio(target_ratio_range):
 
         if (cv2.waitKey(1) & 0xFF == ord('q')) or current_detected:
             if current_detected:
-                with open("contour_result.json", "w") as f:
+                with open("hearing_aid_border.json", "w") as f:
                     json.dump({"contours": current_detected}, f, indent=4)
             break
 
@@ -139,7 +139,7 @@ def detect_contours_by_ratio(target_ratio_range):
 
 def preview_saved_contours(grid_type="pink"):
     global is_previewing, is_previewing_white, cap
-    json_path = "contour_result.json" if grid_type == "pink" else WHITE_BORDER_JSON_PATH
+    json_path = "hearing_aid_border.json" if grid_type == "pink" else WHITE_BORDER_JSON_PATH
     if not os.path.exists(json_path):
         messagebox.showerror("错误", f"未找到 {json_path}")
         return
