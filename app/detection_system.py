@@ -1,3 +1,4 @@
+import time
 import cv2
 import numpy as np
 import json
@@ -45,8 +46,8 @@ class DetectionSystem:
     def draw_charging_case(self, img, r):
         if r is None: return img
         x, y, w, h = r
-        gw, gh = w / 5, h / 2
-        for i in range(6): cv2.line(img, (int(x + i * gw), y), (int(x + i * gw), y + h), (255, 255, 255), 2)
+        gw, gh = w / 10, h / 2
+        for i in range(11): cv2.line(img, (int(x + i * gw), y), (int(x + i * gw), y + h), (255, 255, 255), 2)
         for i in range(3): cv2.line(img, (x, int(y + i * gh)), (x + w, int(y + i * gh)), (255, 255, 255), 2)
         return img
 
@@ -93,7 +94,7 @@ class DetectionSystem:
                 for c in cnts:
                     if cv2.contourArea(c) < 5000: continue
                     x, y, w, h = cv2.boundingRect(c)
-                    if 30.0 <= (w * h / (self.size[0] * self.size[1]) * 100) <= 35.0:
+                    if 30.0 <= (w * h / (self.size[0] * self.size[1]) * 100) <= 32.0:
                         target = (x, y, w, h)
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 frame = self.draw_hearing_aid(frame, target)
@@ -122,6 +123,7 @@ class DetectionSystem:
             if cv2.waitKey(1) & 0xFF == ord('q'): break
 
         # 释放资源
+        time.sleep(5)
         cap.release()
         self.preview_win.destroy()
 

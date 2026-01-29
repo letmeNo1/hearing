@@ -1,197 +1,107 @@
 import cv2
 import numpy as np
 import json
-import tkinter as tk
-from tkinter import ttk, messagebox
 import os
-import threading
 
-# 全局变量
-cap = None
-cam_width = 1920
-cam_height = 1080
-cam_total_area = cam_width * cam_height
-is_previewing = False
-is_detecting = False
-is_previewing_white = False
+# 配置常量
+CALIBRATION_PARAMS_FILE = "calibration_params.json"
+CAM_WIDTH, CAM_HEIGHT = 1920, 1080
 
-# 显示缩放配置
-DISPLAY_SCALE = 0.5
-display_width = int(cam_width * DISPLAY_SCALE)
-display_height = int(cam_height * DISPLAY_SCALE)
+# 全局变量（用于存储点击的校准点）
+calibration_points = []
+click_window_name = "透视变换校准 - 点击顺序：左上→右上→右下→左下"
+target_size = (CAM_WIDTH, CAM_HEIGHT)  # 校正后目标尺寸
 
-# ===================== 网格配置 =====================
-HEARING_AID_GRID_ROWS = 4
-HEARING_AID_GRID_COLS_CALC = 14
-HEARING_AID_GRID_COLS_DISPLAY = 13
-HEARING_AID_GRID_COLOR = (255, 0, 0)
-HEARING_AID_GRID_THICKNESS = 2
+def on_mouse_click(event, x, y, flags, param):
+    """鼠标点击回调函数，收集4个校准点"""
+    global calibration_points
+    if event == cv2.EVENT_LBUTTONDOWN:
+        if len(calibration_points) < 4:
+            calibration_points.append((x, y))
+            # 绘制点击的点（红色圆圈）
+            cv2.circle(param, (x, y), 5, (0, 0, 255), -1)
+            cv2.putText(param, f"{len(calibration_points)}", (x+10, y), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.imshow(click_window_name, param)
+            print(f"已选择第{len(calibration_points)}个点：({x}, {y})")
+            
+            # 选满4个点后自动计算变换矩阵
+            if len(calibration_points) == 4:
+                calculate_perspective_matrix(param)
 
-WHITE_GRID_ROWS = 2
-WHITE_GRID_COLS = 5
-WHITE_BORDER_COLOR = (255, 255, 255)
-WHITE_BORDER_THICKNESS = 5
-WHITE_GRID_COLOR = (255, 0, 0)
-WHITE_GRID_THICKNESS = 2
+def calculate_perspective_matrix(frame):
+    """计算透视变换矩阵并保存"""
+    global calibration_points
+    # 1. 整理源点（用户点击的4个角点）
+    src_points = np.array(calibration_points, dtype=np.float32)
+    
+    # 2. 定义目标点（校正后为规则矩形，铺满目标尺寸）
+    dst_points = np.array([
+        [0, 0],                      # 左上
+        [target_size[0], 0],         # 右上
+        [target_size[0], target_size[1]],  # 右下
+        [0, target_size[1]]          # 左下
+    ], dtype=np.float32)
+    
+    # 3. 计算透视变换矩阵
+    M = cv2.getPerspectiveTransform(src_points, dst_points)
+    
+    # 4. 验证校正效果（显示校正后的画面）
+    corrected_frame = cv2.warpPerspective(frame, M, target_size)
+    cv2.imshow("校正效果预览（按任意键保存参数）", corrected_frame)
+    cv2.waitKey(0)
+    
+    # 5. 保存参数到JSON文件
+    calibration_data = {
+        "perspective_matrix": M.tolist(),
+        "cropped_size": target_size,
+        "source_points": calibration_points,
+        "target_points": dst_points.tolist()
+    }
+    
+    with open(CALIBRATION_PARAMS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(calibration_data, f, indent=4)
+    
+    print(f"\n✅ 透视变换参数已保存到 {CALIBRATION_PARAMS_FILE}")
+    print(f"变换矩阵：\n{M}")
+    print("\n提示：重启网格监控程序即可使用新的校准参数！")
+    
+    # 清理窗口
+    cv2.destroyAllWindows()
 
-WHITE_BORDER_JSON_PATH = "charging_case_border.json"
-
-
-# ===================== 核心函数：移除畸变逻辑 =====================
-
-def init_camera():
-    """初始化摄像头，强制原始 1920x1080 尺寸"""
-    global cap
+def main():
+    """主校准流程"""
+    # 初始化摄像头
     cap = cv2.VideoCapture(1)
     if not cap.isOpened():
-        messagebox.showerror("错误", "❌ 无法打开摄像头！")
-        return False
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    return True
-
-
-def draw_HEARING_AID_grid(frame, target_rect):
-    """粉色框网格：14等分计算，显示13列，4行，保留偏移"""
-    if target_rect is None: return frame
-    frame_copy = frame.copy()
-    x, y, w, h = target_rect
-    grid_w = w / HEARING_AID_GRID_COLS_CALC
-    grid_h = h / HEARING_AID_GRID_ROWS
-    x_new = int(x + grid_w / 2)
-
-    # 绘制网格
-    for col in range(HEARING_AID_GRID_COLS_DISPLAY + 1):
-        curr_x = int(x_new + col * grid_w)
-        cv2.line(frame_copy, (curr_x, y), (curr_x, y + h), HEARING_AID_GRID_COLOR, HEARING_AID_GRID_THICKNESS)
-    for row in range(HEARING_AID_GRID_ROWS + 1):
-        curr_y = int(y + row * grid_h)
-        line_end = int(x_new + HEARING_AID_GRID_COLS_DISPLAY * grid_w)
-        cv2.line(frame_copy, (x_new, curr_y), (line_end, curr_y), HEARING_AID_GRID_COLOR, HEARING_AID_GRID_THICKNESS)
-    return frame_copy
-
-
-def draw_white_grid(frame, target_rect):
-    """白色框网格：5列2行，无偏移"""
-    if target_rect is None: return frame
-    frame_copy = frame.copy()
-    x, y, w, h = target_rect
-    grid_w, grid_h = w / WHITE_GRID_COLS, h / WHITE_GRID_ROWS
-    for i in range(WHITE_GRID_COLS + 1):
-        cx = int(x + i * grid_w)
-        cv2.line(frame_copy, (cx, y), (cx, y + h), WHITE_GRID_COLOR, WHITE_GRID_THICKNESS)
-    for i in range(WHITE_GRID_ROWS + 1):
-        cy = int(y + i * grid_h)
-        cv2.line(frame_copy, (x, cy), (x + w, cy), WHITE_GRID_COLOR, WHITE_GRID_THICKNESS)
-    return frame_copy
-
-
-# ===================== 检测与预览逻辑 =====================
-
-def detect_contours_by_ratio(target_ratio_range):
-    global cap, is_detecting
-    if not init_camera(): return
-    is_detecting = True
-    print("\n🔍 开始检测原始画面（无畸变校正）")
-
-    while is_detecting:
-        ret, frame = cap.read()
-        if not ret: continue
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (7, 7), 0)
-        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        frame_copy = frame.copy()
-        target_rect = None
-        current_detected = []
-
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area < 2000: continue
-            x, y, w, h = cv2.boundingRect(cnt)
-            rect_ratio = ((w * h) / cam_total_area) * 100
-
-            if target_ratio_range[0] <= rect_ratio <= target_ratio_range[1]:
-                box = np.int32(cv2.boxPoints(cv2.minAreaRect(cnt)))
-                current_detected.append({
-                    "rect_ratio": round(rect_ratio, 2),
-                    "bounding_box_coordinates": box.tolist(),
-                    "bounding_rect": (x, y, w, h)
-                })
-                cv2.drawContours(frame_copy, [box], 0, (0, 255, 0), 4)
-                target_rect = (x, y, w, h)
-
-        frame_final = draw_HEARING_AID_grid(frame_copy, target_rect)
-        cv2.imshow("Detection - Original Frame", cv2.resize(frame_final, (display_width, display_height)))
-
-        if (cv2.waitKey(1) & 0xFF == ord('q')) or current_detected:
-            if current_detected:
-                with open("hearing_aid_border.json", "w") as f:
-                    json.dump({"contours": current_detected}, f, indent=4)
-            break
-
-    is_detecting = False
-    cap.release()
-    cv2.destroyAllWindows()
-
-
-def preview_saved_contours(grid_type="hearing_aid"):
-    global is_previewing, is_previewing_white, cap
-    json_path = "hearing_aid_border.json" if grid_type == "hearing_aid" else WHITE_BORDER_JSON_PATH
-    if not os.path.exists(json_path):
-        messagebox.showerror("错误", f"未找到 {json_path}")
+        cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
+    
+    # 读取一帧画面用于校准
+    ret, frame = cap.read()
+    if not ret:
+        print("❌ 无法从摄像头读取画面！")
+        cap.release()
         return
-    if not init_camera(): return
-
-    if grid_type == "hearing_aid":
-        is_previewing = True
-    else:
-        is_previewing_white = True
-
-    while is_previewing or is_previewing_white:
-        ret, frame = cap.read()
-        if not ret: break
-        with open(json_path, "r") as f:
-            data = json.load(f)
-
-        for c in data.get("contours", []):
-            rect = c["bounding_rect"]
-            frame = draw_HEARING_AID_grid(frame, rect) if grid_type == "hearing_aid" else draw_white_grid(frame, rect)
-
-        cv2.imshow(f"Preview - {grid_type}", cv2.resize(frame, (display_width, display_height)))
-        if cv2.waitKey(1) & 0xFF == ord('q'): break
-
-    is_previewing = is_previewing_white = False
-    cap.release()
+    
+    cap.release()  # 校准仅需一帧，释放摄像头
+    
+    # 显示校准窗口并等待点击
+    cv2.namedWindow(click_window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(click_window_name, 1280, 720)
+    cv2.setMouseCallback(click_window_name, on_mouse_click, frame)
+    
+    print("📌 校准说明：")
+    print("1. 请在画面中依次点击目标区域的4个角点（左上→右上→右下→左下）")
+    print("2. 点击后会显示校正效果预览，按任意键保存参数")
+    print("3. 若想重新选点，关闭窗口后重新运行脚本\n")
+    
+    cv2.imshow(click_window_name, frame)
+    cv2.waitKey(0)
+    
+    # 清理
     cv2.destroyAllWindows()
-
-
-# ===================== GUI 启动 =====================
-
-def create_gui():
-    root = tk.Tk()
-    root.title("原始画面检测系统 (无畸变校正)")
-    root.geometry("600x300")
-
-    ttk.Label(root, text="💡 当前模式：原始 1920x1080 画面直出", font=("微软雅黑", 12)).pack(pady=20)
-
-    btn_frame = ttk.Frame(root)
-    btn_frame.pack(pady=10)
-
-    ttk.Button(btn_frame, text="开始检测 (粉色)",
-               command=lambda: threading.Thread(target=detect_contours_by_ratio, args=((31.0, 32.0),),
-                                                daemon=True).start()).grid(row=0, column=0, padx=10)
-    ttk.Button(btn_frame, text="预览粉色",
-               command=lambda: threading.Thread(target=preview_saved_contours, args=("hearing_aid",),
-                                                daemon=True).start()).grid(row=0, column=1, padx=10)
-    ttk.Button(btn_frame, text="预览白色",
-               command=lambda: threading.Thread(target=preview_saved_contours, args=("white",),
-                                                daemon=True).start()).grid(row=0, column=2, padx=10)
-
-    root.mainloop()
-
 
 if __name__ == "__main__":
-    create_gui()
+    main()
