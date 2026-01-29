@@ -21,11 +21,11 @@ display_width = int(cam_width * DISPLAY_SCALE)
 display_height = int(cam_height * DISPLAY_SCALE)
 
 # ===================== 网格配置 =====================
-PINK_GRID_ROWS = 4
-PINK_GRID_COLS_CALC = 14
-PINK_GRID_COLS_DISPLAY = 13
-PINK_GRID_COLOR = (255, 0, 0)
-PINK_GRID_THICKNESS = 2
+HEARING_AID_GRID_ROWS = 4
+HEARING_AID_GRID_COLS_CALC = 14
+HEARING_AID_GRID_COLS_DISPLAY = 13
+HEARING_AID_GRID_COLOR = (255, 0, 0)
+HEARING_AID_GRID_THICKNESS = 2
 
 WHITE_GRID_ROWS = 2
 WHITE_GRID_COLS = 5
@@ -51,23 +51,23 @@ def init_camera():
     return True
 
 
-def draw_pink_grid(frame, target_rect):
+def draw_HEARING_AID_grid(frame, target_rect):
     """粉色框网格：14等分计算，显示13列，4行，保留偏移"""
     if target_rect is None: return frame
     frame_copy = frame.copy()
     x, y, w, h = target_rect
-    grid_w = w / PINK_GRID_COLS_CALC
-    grid_h = h / PINK_GRID_ROWS
+    grid_w = w / HEARING_AID_GRID_COLS_CALC
+    grid_h = h / HEARING_AID_GRID_ROWS
     x_new = int(x + grid_w / 2)
 
     # 绘制网格
-    for col in range(PINK_GRID_COLS_DISPLAY + 1):
+    for col in range(HEARING_AID_GRID_COLS_DISPLAY + 1):
         curr_x = int(x_new + col * grid_w)
-        cv2.line(frame_copy, (curr_x, y), (curr_x, y + h), PINK_GRID_COLOR, PINK_GRID_THICKNESS)
-    for row in range(PINK_GRID_ROWS + 1):
+        cv2.line(frame_copy, (curr_x, y), (curr_x, y + h), HEARING_AID_GRID_COLOR, HEARING_AID_GRID_THICKNESS)
+    for row in range(HEARING_AID_GRID_ROWS + 1):
         curr_y = int(y + row * grid_h)
-        line_end = int(x_new + PINK_GRID_COLS_DISPLAY * grid_w)
-        cv2.line(frame_copy, (x_new, curr_y), (line_end, curr_y), PINK_GRID_COLOR, PINK_GRID_THICKNESS)
+        line_end = int(x_new + HEARING_AID_GRID_COLS_DISPLAY * grid_w)
+        cv2.line(frame_copy, (x_new, curr_y), (line_end, curr_y), HEARING_AID_GRID_COLOR, HEARING_AID_GRID_THICKNESS)
     return frame_copy
 
 
@@ -123,7 +123,7 @@ def detect_contours_by_ratio(target_ratio_range):
                 cv2.drawContours(frame_copy, [box], 0, (0, 255, 0), 4)
                 target_rect = (x, y, w, h)
 
-        frame_final = draw_pink_grid(frame_copy, target_rect)
+        frame_final = draw_HEARING_AID_grid(frame_copy, target_rect)
         cv2.imshow("Detection - Original Frame", cv2.resize(frame_final, (display_width, display_height)))
 
         if (cv2.waitKey(1) & 0xFF == ord('q')) or current_detected:
@@ -137,15 +137,15 @@ def detect_contours_by_ratio(target_ratio_range):
     cv2.destroyAllWindows()
 
 
-def preview_saved_contours(grid_type="pink"):
+def preview_saved_contours(grid_type="hearing_aid"):
     global is_previewing, is_previewing_white, cap
-    json_path = "hearing_aid_border.json" if grid_type == "pink" else WHITE_BORDER_JSON_PATH
+    json_path = "hearing_aid_border.json" if grid_type == "hearing_aid" else WHITE_BORDER_JSON_PATH
     if not os.path.exists(json_path):
         messagebox.showerror("错误", f"未找到 {json_path}")
         return
     if not init_camera(): return
 
-    if grid_type == "pink":
+    if grid_type == "hearing_aid":
         is_previewing = True
     else:
         is_previewing_white = True
@@ -158,7 +158,7 @@ def preview_saved_contours(grid_type="pink"):
 
         for c in data.get("contours", []):
             rect = c["bounding_rect"]
-            frame = draw_pink_grid(frame, rect) if grid_type == "pink" else draw_white_grid(frame, rect)
+            frame = draw_HEARING_AID_grid(frame, rect) if grid_type == "hearing_aid" else draw_white_grid(frame, rect)
 
         cv2.imshow(f"Preview - {grid_type}", cv2.resize(frame, (display_width, display_height)))
         if cv2.waitKey(1) & 0xFF == ord('q'): break
@@ -184,7 +184,7 @@ def create_gui():
                command=lambda: threading.Thread(target=detect_contours_by_ratio, args=((31.0, 32.0),),
                                                 daemon=True).start()).grid(row=0, column=0, padx=10)
     ttk.Button(btn_frame, text="预览粉色",
-               command=lambda: threading.Thread(target=preview_saved_contours, args=("pink",),
+               command=lambda: threading.Thread(target=preview_saved_contours, args=("hearing_aid",),
                                                 daemon=True).start()).grid(row=0, column=1, padx=10)
     ttk.Button(btn_frame, text="预览白色",
                command=lambda: threading.Thread(target=preview_saved_contours, args=("white",),

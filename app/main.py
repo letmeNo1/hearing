@@ -39,9 +39,9 @@ def main_gui():
     tk.Button(root, text="🔍 助听器托盘校准", bg="#4CAF50", fg="white",
               command=lambda: run_detection("detect"), **btn_style).pack(pady=10)
 
-    # 4. 预览 Pink
+    # 4. 预览 HEARING_AID
     tk.Button(root, text="显示助听器托盘预览", bg="#E91E63", fg="white",
-              command=lambda: run_detection("pink"), **btn_style).pack(pady=5)
+              command=lambda: run_detection("hearing_aid"), **btn_style).pack(pady=5)
 
     # 5. 预览 White
     tk.Button(root, text="显示充电盒托盘预览", bg="#795548", fg="white",

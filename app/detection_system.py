@@ -28,7 +28,7 @@ class DetectionSystem:
                 self.M = np.array(d['perspective_matrix'])
                 self.size = tuple(d['cropped_size'])
 
-    def draw_pink(self, img, r):
+    def draw_hearing_aid(self, img, r):
         if r is None: return img
         x, y, w, h = r
         y_off = int(h * 0.05)
@@ -42,7 +42,7 @@ class DetectionSystem:
             cv2.line(img, (xs, cy), (int(xs + 13 * gw), cy), (255, 0, 255), 2)
         return img
 
-    def draw_white(self, img, r):
+    def draw_charging_case(self, img, r):
         if r is None: return img
         x, y, w, h = r
         gw, gh = w / 5, h / 2
@@ -96,19 +96,19 @@ class DetectionSystem:
                     if 30.0 <= (w * h / (self.size[0] * self.size[1]) * 100) <= 35.0:
                         target = (x, y, w, h)
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                frame = self.draw_pink(frame, target)
+                frame = self.draw_hearing_aid(frame, target)
                 if target:
                     with open(HEARING_AID_BORDER_DATA , "w") as f:
                         json.dump({"contours": [{"bounding_rect": target}]}, f)
                     detection_success = True
                     self.is_running = False  # 自动停止
             else:
-                path = HEARING_AID_BORDER_DATA  if mode == "pink" else CHARGING_CASE_BORDER_DATA
+                path = HEARING_AID_BORDER_DATA  if mode == "hearing_aid" else CHARGING_CASE_BORDER_DATA
                 if os.path.exists(path):
                     with open(path, "r") as f:
                         for c in json.load(f).get("contours", []):
                             r = c["bounding_rect"]
-                            frame = self.draw_pink(frame, r) if mode == "pink" else self.draw_white(frame, r)
+                            frame = self.draw_hearing_aid(frame, r) if mode == "hearing_aid" else self.draw_charging_case(frame, r)
 
             # --- 转换图像格式以供 Tkinter Label 显示 ---
             img_show = cv2.resize(frame, (960, 540))
