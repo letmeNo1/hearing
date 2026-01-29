@@ -1,2 +1,3 @@
 app/__pycache__/preview_worker.cpython-39.pyc
 *.pyc
+/brightness_logs
