@@ -2,3 +2,6 @@ app/__pycache__/preview_worker.cpython-39.pyc
 *.pyc
 /brightness_logs
 charging_grid_analysis_report.txt
+/hearing_aid_brightness_log
+/charging_log
+hearing_aid_grid_analysis_report.txt

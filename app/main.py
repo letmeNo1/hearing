@@ -7,8 +7,9 @@ import detection_system
 from border_adjuster import adjust_charging_case_border
 import calibration_tool
 import grid_monitor
-# 导入充电日志分析工具（仅导入，不内嵌逻辑）
+# 导入日志分析工具（充电盒+助听器）
 import charging_log_analysis_tool
+import hearing_aid_log_analysis_tool  # 新增：导入助听器日志分析工具
 
 # 全局 root 变量
 root = None
@@ -24,7 +25,7 @@ def main_gui():
     global root
     root = tk.Tk()
     root.title("智能视觉标定与检测系统")
-    root.geometry("450x700")
+    root.geometry("450x750")  # 微调高度，适配新增按钮
 
     # 标题
     tk.Label(root, text="系统控制面板", font=("微软雅黑", 16, "bold"), pady=20).pack()
@@ -58,9 +59,12 @@ def main_gui():
     tk.Button(root, text="📹 启动充电盒网格监控", bg="#9C27B0", fg="white",
               command=lambda: grid_monitor.start_charging_case_monitor(root), **btn_style).pack(pady=5)
 
-    # 7. 充电日志分析（仅调用工具包的界面函数）
+    # 7. 日志分析按钮（充电盒+助听器）
     tk.Button(root, text="📊 充电日志分析", bg="#F44336", fg="white",
               command=lambda: charging_log_analysis_tool.open_log_analyzer_window(root), **btn_style).pack(pady=5)
+    # 新增：助听器日志分析按钮
+    tk.Button(root, text="📊 助听器日志分析", bg="#3F51B5", fg="white",
+              command=lambda: hearing_aid_log_analysis_tool.open_hearing_aid_analyzer_window(root), **btn_style).pack(pady=5)
 
     # 状态栏
     tk.Label(root, text="提示：按 'S' 保存调整，'Q' 退出预览/监控", fg="gray").pack(side="bottom", pady=20)

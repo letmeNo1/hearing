@@ -13,21 +13,29 @@ from PIL import Image, ImageTk
 PARAMS_FILE = "calibration_params.json"
 HEARING_AID_BORDER_DATA = "hearing_aid_border.json"
 CHARGING_CASE_BORDER_DATA = "charging_case_border.json"
-BRIGHTNESS_ROOT_DIR = "brightness_logs"  # 亮度日志根文件夹
-CHARGING_ROOT_DIR = "charging_log"       # 充电状态日志根文件夹
+# 新增：助听器日志根目录
+HEARING_AID_BRIGHTNESS_ROOT_DIR = "hearing_aid_brightness_log"
+CHARGING_BRIGHTNESS_ROOT_DIR = "brightness_logs"  # 充电盒亮度日志根文件夹
+CHARGING_ROOT_DIR = "charging_log"               # 充电盒状态日志根文件夹
 CAM_WIDTH, CAM_HEIGHT = 1920, 1080
 
-# 亮度检测配置
+# 亮度检测配置（通用）
 BRIGHT_THRESHOLD = 35
-BRIGHT_PIXEL_RATIO = 0.001
+BRIGHT_PIXEL_RATIO = 0.001  # 助听器异常判定阈值：超过此比例视为亮（异常）
 DILATE_KERNEL_SIZE = (5, 5)
 
-# 充电盒逐格分析配置（仅作用于充电盒）
+# 充电盒逐格分析配置
 ANALYSIS_INTERVAL = 4    # 每4秒分析一次
 CACHE_DURATION = 4       # 分析过去4秒的数据
 STABILITY_THRESHOLD = 0.05  # 常亮判定：亮度波动<5%
 START_DELAY = 5          # 启动后延迟5秒再开始检测分析
-GRID_COUNT = 20          # 充电盒总网格数（4行5列=20格）
+GRID_COUNT_CHARGING = 20 # 充电盒总网格数（4行5列=20格）
+GRID_COUNT_HEARING_AID = 56 # 助听器总网格数（4行14列=56格）
+
+# 状态枚举（英文）
+STATUS_NO_STATUS = "no_status"
+STATUS_CHARGING = "charging"
+STATUS_CHARGED = "charged"
 
 class GridMonitor:
     def __init__(self, root, monitor_type):
@@ -41,43 +49,51 @@ class GridMonitor:
         self.grid_regions = []
         self.monitor_win = None
         
-        # 仅充电盒初始化相关变量
-        self.grid_brightness_cache = []
-        self.start_time = 0  # 程序启动时间（用于5秒延迟）
-        self.restart_timestamp = ""  # 本次重启的时间戳（YYYYMMDD_HHMMSS）
+        # 重启时间戳（通用）
+        self.restart_timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+        self.start_time = 0  # 程序启动时间
+        self.last_analysis_time = 0  # 上次分析时间戳
+        
+        # 按设备类型初始化缓存和目录
         if self.monitor_type == "charging_case":
-            self.grid_brightness_cache = [[] for _ in range(GRID_COUNT)]
-            # 生成本次重启的唯一时间戳（精确到秒，避免重复）
-            self.restart_timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-            # 启动前创建根文件夹 + 本次重启的子文件夹
+            self.grid_brightness_cache = [[] for _ in range(GRID_COUNT_CHARGING)]
             self._create_root_dirs()
             self._create_restart_subdirs()
-        self.last_analysis_time = 0  # 上次分析时间戳
+        elif self.monitor_type == "hearing_aid":
+            self.grid_brightness_cache = [[] for _ in range(GRID_COUNT_HEARING_AID)]
+            self._create_root_dirs()
+            self._create_restart_subdirs()
 
     def _create_root_dirs(self):
-        """创建亮度/充电状态日志根文件夹（不存在则创建）"""
+        """创建根目录（区分设备类型）"""
         try:
-            os.makedirs(BRIGHTNESS_ROOT_DIR, exist_ok=True)
-            os.makedirs(CHARGING_ROOT_DIR, exist_ok=True)
+            if self.monitor_type == "hearing_aid":
+                os.makedirs(HEARING_AID_BRIGHTNESS_ROOT_DIR, exist_ok=True)
+            else:  # charging_case
+                os.makedirs(CHARGING_BRIGHTNESS_ROOT_DIR, exist_ok=True)
+                os.makedirs(CHARGING_ROOT_DIR, exist_ok=True)
         except Exception as e:
-            messagebox.showerror("文件夹创建失败", f"根文件夹创建失败：{str(e)}")
+            messagebox.showerror("Dir Create Failed", f"Root dir create failed: {str(e)}")
 
     def _create_restart_subdirs(self):
-        """创建本次重启的子文件夹（亮度/充电日志目录下各一个）"""
-        if self.monitor_type != "charging_case":
-            return
-        # 亮度日志重启子文件夹：brightness_logs/重启时间戳/
-        brightness_restart_dir = os.path.join(BRIGHTNESS_ROOT_DIR, self.restart_timestamp)
-        # 充电日志重启子文件夹：charging_log/重启时间戳/
-        charging_restart_dir = os.path.join(CHARGING_ROOT_DIR, self.restart_timestamp)
+        """创建本次重启的子目录（区分设备类型）"""
         try:
-            os.makedirs(brightness_restart_dir, exist_ok=True)
-            os.makedirs(charging_restart_dir, exist_ok=True)
+            if self.monitor_type == "hearing_aid":
+                # 助听器：hearing_aid_brightness_log/restart_timestamp/
+                restart_dir = os.path.join(HEARING_AID_BRIGHTNESS_ROOT_DIR, self.restart_timestamp)
+                os.makedirs(restart_dir, exist_ok=True)
+            else:  # charging_case
+                # 充电盒亮度日志子目录
+                brightness_restart_dir = os.path.join(CHARGING_BRIGHTNESS_ROOT_DIR, self.restart_timestamp)
+                # 充电盒状态日志子目录
+                charging_restart_dir = os.path.join(CHARGING_ROOT_DIR, self.restart_timestamp)
+                os.makedirs(brightness_restart_dir, exist_ok=True)
+                os.makedirs(charging_restart_dir, exist_ok=True)
         except Exception as e:
-            messagebox.showerror("文件夹创建失败", f"重启子文件夹创建失败：{str(e)}")
+            messagebox.showerror("Dir Create Failed", f"Restart subdir create failed: {str(e)}")
 
     def _get_10min_segment(self):
-        """获取当前10分钟时间段的标识（YYYYMMDD_HHMM_HHMM）"""
+        """获取当前10分钟分段ID（YYYYMMDD_HHMM_HHMM）"""
         now = time.localtime()
         year, month, day = now.tm_year, now.tm_mon, now.tm_mday
         hour, minute = now.tm_hour, now.tm_min
@@ -87,14 +103,14 @@ class GridMonitor:
         start_h, end_h = hour, hour
         start_d, end_d = day, day
         
-        # 处理跨小时/跨天情况
+        # 跨小时/跨天处理
         if end_minute >= 60:
             end_minute = 0
             end_h += 1
             if end_h >= 24:
                 end_h = 0
                 end_d += 1
-                if end_d > 31:  # 简单处理跨月，实际可优化
+                if end_d > 31:  # 简易跨月处理
                     end_d = 1
                     end_h = 0
 
@@ -105,44 +121,51 @@ class GridMonitor:
         return f"{date_str}_{start_time_str}_{end_time_str}"
 
     def get_10min_log_filename(self):
-        """获取当前10分钟段的亮度日志文件名（仅充电盒）"""
-        if self.monitor_type != "charging_case":
-            return ""
-        # 路径：brightness_logs/重启时间戳/10分钟分段.json
+        """获取当前10分钟日志文件名（区分设备类型）"""
         segment = self._get_10min_segment()
-        restart_dir = os.path.join(BRIGHTNESS_ROOT_DIR, self.restart_timestamp)
-        return os.path.join(restart_dir, f"{segment}.json")
+        if self.monitor_type == "hearing_aid":
+            # 助听器路径：hearing_aid_brightness_log/restart_timestamp/10min_segment.json
+            restart_dir = os.path.join(HEARING_AID_BRIGHTNESS_ROOT_DIR, self.restart_timestamp)
+            return os.path.join(restart_dir, f"{segment}.json")
+        elif self.monitor_type == "charging_case":
+            # 充电盒亮度日志路径
+            restart_dir = os.path.join(CHARGING_BRIGHTNESS_ROOT_DIR, self.restart_timestamp)
+            return os.path.join(restart_dir, f"{segment}.json")
+        return ""
 
     def get_charging_status_filename(self):
-        """获取当前10分钟段的充电状态日志文件名（仅充电盒）"""
+        """充电盒状态日志文件名（仅充电盒）"""
         if self.monitor_type != "charging_case":
             return ""
-        # 路径：charging_log/重启时间戳/10分钟分段.log
         segment = self._get_10min_segment()
         restart_dir = os.path.join(CHARGING_ROOT_DIR, self.restart_timestamp)
-        return os.path.join(restart_dir, f"{segment}.log")
+        return os.path.join(restart_dir, f"{segment}.json")
 
     def load_config(self):
+        """加载校准参数和边框配置"""
         if os.path.exists(PARAMS_FILE):
             with open(PARAMS_FILE, 'r') as f:
                 d = json.load(f)
                 self.M = np.array(d['perspective_matrix'])
                 self.size = tuple(d['cropped_size'])
 
+        # 加载对应设备的边框配置
         border_file = HEARING_AID_BORDER_DATA if self.monitor_type == "hearing_aid" else CHARGING_CASE_BORDER_DATA
         if os.path.exists(border_file):
             with open(border_file, 'r') as f:
                 d = json.load(f)
                 self.border_rect = d['contours'][0]['bounding_rect']
         else:
-            raise Exception(f"未找到{self.monitor_type}边框配置文件: {border_file}")
+            raise Exception(f"Border config file not found for {self.monitor_type}: {border_file}")
 
     def init_grid_regions(self):
+        """初始化网格区域（区分设备类型）"""
         self.grid_regions.clear()
         x, y, w, h = self.border_rect
         index = 0
 
         if self.monitor_type == "hearing_aid":
+            # 助听器：4行14列 = 56格
             y_off = int(h * 0.05)
             ys, ye, nh = y + y_off, y + h - y_off, h - 2 * y_off
             gw, xs = w / 14, int(x + (w / 14) / 2)
@@ -156,27 +179,26 @@ class GridMonitor:
                     index += 1
 
         elif self.monitor_type == "charging_case":
-            # 充电盒网格为4行5列（20格）- 修复语法错误
-            gw = w / 5    # 每列宽度 = 总宽度 / 5
-            gh = h / 4    # 每行高度 = 总高度 / 4
-            # 遍历4行
+            # 充电盒：4行5列 = 20格
+            gw = w / 5    # 列宽 = 总宽度 / 5
+            gh = h / 4    # 行高 = 总高度 / 4
             for row in range(4):
                 row_y1 = int(y + row * gh)
                 row_y2 = int(y + (row + 1) * gh)
-                # 遍历5列
                 for col in range(5):
                     col_x1 = int(x + col * gw)
-                    col_x2 = int(x + (col + 1) * gw)  # 修复原语法错误
+                    col_x2 = int(x + (col + 1) * gw)
                     self.grid_regions.append((col_x1, row_y1, col_x2, row_y2, index))
                     index += 1
 
     def calculate_grid_bright(self, frame):
-        bright_grids = []
+        """计算网格亮度（通用逻辑）"""
+        bright_grids = []  # 异常网格（助听器）/亮网格（充电盒）
         grid_brightness = []
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.GaussianBlur(frame_gray, (5, 5), 0)
 
-        # 先膨胀再二值化，强化小亮点
+        # 膨胀增强亮斑
         kernel = np.ones(DILATE_KERNEL_SIZE, np.uint8)
         frame_gray = cv2.dilate(frame_gray, kernel, iterations=1)
 
@@ -193,149 +215,168 @@ class GridMonitor:
             bright_ratio = bright_pixels / total_pixels
             grid_brightness.append(bright_ratio)
 
+            # 判定逻辑：助听器（亮=异常）、充电盒（亮=正常亮格）
             if bright_ratio >= BRIGHT_PIXEL_RATIO:
                 bright_grids.append(idx)
 
-        # 仅充电盒场景更新逐格缓存
-        if self.monitor_type == "charging_case":
-            current_time = time.time()
-            # 遍历20个格子，更新对应缓存
-            for grid_idx in range(GRID_COUNT):
-                # 确保索引不越界（兼容配置异常情况）
-                brightness = grid_brightness[grid_idx] if grid_idx < len(grid_brightness) else 0.0
-                self.grid_brightness_cache[grid_idx].append((current_time, brightness))
+        # 更新缓存（通用）
+        current_time = time.time()
+        grid_count = GRID_COUNT_HEARING_AID if self.monitor_type == "hearing_aid" else GRID_COUNT_CHARGING
+        for grid_idx in range(grid_count):
+            brightness = grid_brightness[grid_idx] if grid_idx < len(grid_brightness) else 0.0
+            self.grid_brightness_cache[grid_idx].append((current_time, brightness))
 
         return bright_grids, grid_brightness, frame_binary
 
     def clean_expired_cache(self):
-        """仅充电盒清理过期缓存：移除每个格子超过4秒的亮度数据"""
-        if self.monitor_type != "charging_case":
-            return
+        """清理过期缓存（仅保留最近4秒）"""
         current_time = time.time()
-        for grid_idx in range(GRID_COUNT):
-            # 保留4秒内的数据
+        grid_count = GRID_COUNT_HEARING_AID if self.monitor_type == "hearing_aid" else GRID_COUNT_CHARGING
+        for grid_idx in range(grid_count):
             self.grid_brightness_cache[grid_idx] = [
                 item for item in self.grid_brightness_cache[grid_idx]
                 if current_time - item[0] <= CACHE_DURATION
             ]
 
     def analyze_single_grid_status(self, grid_idx):
-        """分析单个格子的充电状态（仅充电盒）
-        返回：(状态描述, 详细信息)
-        状态：充电完成/充电中/无状态
-        """
-        cache = self.grid_brightness_cache[grid_idx]
-        if len(cache) < 3:  # 数据不足，先判定为无状态（5秒后数据足够会修正）
-            return "无状态", "数据不足（启动延迟期）"
+        """分析充电盒单个网格状态（仅充电盒）"""
+        if self.monitor_type != "charging_case":
+            return STATUS_NO_STATUS, "not charging case"
         
-        # 提取缓存中的亮度值
+        cache = self.grid_brightness_cache[grid_idx]
+        if len(cache) < 3:
+            return STATUS_NO_STATUS, "insufficient data (startup delay)"
+        
         brightness_list = [item[1] for item in cache]
-        # 计算平均亮度
         brightness_mean = np.mean(brightness_list)
         
-        # 判定1：无状态 - 亮度低于检测阈值（灯没亮）
+        # 无状态：亮度低于阈值
         if brightness_mean < BRIGHT_PIXEL_RATIO:
-            return "无状态", f"亮度低于阈值（均值{brightness_mean:.4f} < {BRIGHT_PIXEL_RATIO}）"
+            return STATUS_NO_STATUS, f"brightness below threshold (mean {brightness_mean:.4f} < {BRIGHT_PIXEL_RATIO})"
         
-        # 计算亮度波动（标准差/均值）
+        # 计算波动
         brightness_std = np.std(brightness_list)
         stability_ratio = brightness_std / brightness_mean if brightness_mean > 0 else 1.0
 
-        # 判定2：充电完成 - 亮度稳定（波动<5%）
+        # 充电完成：亮度稳定
         if stability_ratio < STABILITY_THRESHOLD:
-            return "充电完成", f"常亮（亮度波动{stability_ratio:.4f} < 5%）"
+            return STATUS_CHARGED, f"steady light (brightness fluctuation {stability_ratio:.4f} < 5%)"
         
-        # 判定3：充电中 - 只要亮度达标且不稳定（不管波动/渐变/跳动）
-        # 补充判断渐变方向（可选，仅用于日志说明）
+        # 充电中：亮度波动
         x = np.arange(len(brightness_list))
         slope, _ = np.polyfit(x, brightness_list, 1)
         if slope > 0:
-            trend = "亮度上升"
+            trend = "brightness rising"
         elif slope < 0:
-            trend = "亮度下降"
+            trend = "brightness falling"
         else:
-            trend = "亮度跳动"
+            trend = "brightness fluctuating"
         
-        return "充电中", f"{trend}（波动{stability_ratio:.4f} ≥ 5%）"
+        return STATUS_CHARGING, f"{trend} (fluctuation {stability_ratio:.4f} ≥ 5%)"
 
     def analyze_charging_case_status(self):
-        """分析充电盒20个格子的状态，输出并写入日志"""
+        """分析充电盒状态（仅充电盒）"""
         if self.monitor_type != "charging_case":
             return
         
-        # 检查是否过了5秒启动延迟
+        # 启动延迟检查
         current_time = time.time()
         if current_time - self.start_time < START_DELAY:
-            return  # 未到延迟时间，跳过分析
+            return
         
-        # 清理过期缓存
+        # 清理缓存
         self.clean_expired_cache()
         
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        # 构建状态日志内容
-        log_content = f"===== 充电盒状态分析 [{timestamp}] =====\n"
-        log_content += f"重启标识：{self.restart_timestamp}\n"
-        print(f"\n===== 充电盒状态分析 [{timestamp}] =====")
-        print(f"重启标识：{self.restart_timestamp}")
+        log_entries = []
+        print(f"\n===== Charging Case Status Analysis [{timestamp}] =====")
+        print(f"Restart ID: {self.restart_timestamp}")
         
-        # 遍历20个格子逐个分析
-        for grid_idx in range(GRID_COUNT):
+        # 分析20个网格
+        for grid_idx in range(GRID_COUNT_CHARGING):
             status, detail = self.analyze_single_grid_status(grid_idx)
-            grid_log = f"网格{grid_idx:02d}：{status} - {detail}"
-            log_content += grid_log + "\n"
-            print(grid_log)
+            grid_log_entry = {
+                "timestamp": timestamp,
+                "restart_timestamp": self.restart_timestamp,
+                "grid_id": grid_idx,
+                "status": status,
+                "detail": detail
+            }
+            log_entries.append(grid_log_entry)
+            print(f"Grid {grid_idx:02d}: {status} - {detail}")
         
-        log_content += "=======================================\n\n"
         print("=======================================")
         
-        # 获取当前10分钟段的充电状态日志文件
+        # 写入状态日志
         charging_log_file = self.get_charging_status_filename()
         if not charging_log_file:
             return
-        # 写入充电状态日志文件（追加模式）
+        
         try:
-            with open(charging_log_file, 'a', encoding='utf-8') as f:
-                f.write(log_content)
+            existing_logs = []
+            if os.path.exists(charging_log_file):
+                with open(charging_log_file, 'r', encoding='utf-8') as f:
+                    existing_logs = json.load(f)
+            existing_logs.extend(log_entries)
+            with open(charging_log_file, 'w', encoding='utf-8') as f:
+                json.dump(existing_logs, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            messagebox.showwarning("状态日志写入失败", f"充电盒状态日志保存失败：{str(e)}")
+            messagebox.showwarning("Status Log Write Failed", f"Charging case status log save failed: {str(e)}")
 
     def log_change(self, bright_grids, grid_brightness):
-        if not bright_grids or self.monitor_type != "charging_case":
-            return
-
+        """记录日志（区分设备类型）"""
+        # 通用日志基础信息
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        log_entry = {
-            "timestamp": timestamp,
-            "monitor_type": self.monitor_type,
-            "bright_grids": bright_grids,
-            "grid_brightness": grid_brightness,
-            "total_bright_grids": len(bright_grids),
-            "restart_timestamp": self.restart_timestamp  # 记录本次重启标识
-        }
-
-        # 获取当前10分钟段的亮度日志文件路径
         log_file = self.get_10min_log_filename()
         if not log_file:
             return
 
-        # 写入JSON日志（追加模式）
         try:
-            # 读取现有日志（文件不存在则创建空列表）
+            # 读取现有日志
             logs = []
             if os.path.exists(log_file):
                 with open(log_file, 'r', encoding='utf-8') as f:
                     logs = json.load(f)
-            # 添加新日志条目
+
+            # 按设备类型构建日志条目
+            if self.monitor_type == "hearing_aid":
+                # 助听器日志：重点记录异常网格（亮格=异常）
+                log_entry = {
+                    "timestamp": timestamp,
+                    "monitor_type": self.monitor_type,
+                    "abnormal_grids": bright_grids,  # 异常网格（亮）
+                    "grid_brightness": grid_brightness,  # 所有网格亮度
+                    "total_abnormal_grids": len(bright_grids),  # 异常网格数
+                    "restart_timestamp": self.restart_timestamp,
+                    "normal_status": "dark",  # 正常状态：长暗
+                    "abnormal_reason": "bright spot detected (fluctuation)"  # 异常原因：亮度波动
+                }
+            else:  # charging_case
+                # 充电盒亮度日志（原有逻辑）
+                log_entry = {
+                    "timestamp": timestamp,
+                    "monitor_type": self.monitor_type,
+                    "bright_grids": bright_grids,
+                    "grid_brightness": grid_brightness,
+                    "total_bright_grids": len(bright_grids),
+                    "restart_timestamp": self.restart_timestamp
+                }
+
+            # 添加新条目并写入
             logs.append(log_entry)
-            # 写入文件
             with open(log_file, 'w', encoding='utf-8') as f:
                 json.dump(logs, f, ensure_ascii=False, indent=2)
+
         except Exception as e:
-            messagebox.showwarning("日志写入失败", f"亮度日志保存失败：{str(e)}")
+            msg = f"Hearing aid brightness log save failed: {str(e)}" if self.monitor_type == "hearing_aid" else f"Brightness log save failed: {str(e)}"
+            messagebox.showwarning("Log Write Failed", msg)
 
     def draw_grid_and_bright(self, frame, bright_grids):
+        """绘制网格和异常/亮格（通用）"""
         x, y, w, h = self.border_rect
+        # 绘制网格线（区分设备）
         if self.monitor_type == "hearing_aid":
+            # 助听器网格线：4行14列
             y_off = int(h * 0.05)
             ys, ye, nh = y + y_off, y + h - y_off, h - 2 * y_off
             gw, xs = w / 14, int(x + (w / 14) / 2)
@@ -346,7 +387,7 @@ class GridMonitor:
                 cy = int(ys + i * (nh / 4))
                 cv2.line(frame, (xs, cy), (int(xs + 13 * gw), cy), (255, 0, 255), 2)
         elif self.monitor_type == "charging_case":
-            # 4行5列网格绘制
+            # 充电盒网格线：4行5列
             gw = w / 5
             gh = h / 4
             # 竖线（5列=6条线）
@@ -356,7 +397,7 @@ class GridMonitor:
             for i in range(5):
                 cv2.line(frame, (x, int(y + i * gh)), (x + w, int(y + i * gh)), (255, 255, 255), 2)
 
-        # 标注亮网格
+        # 标记异常/亮格（红色覆盖）
         for (x1, y1, x2, y2, idx) in self.grid_regions:
             if idx in bright_grids:
                 overlay = frame.copy()
@@ -367,14 +408,16 @@ class GridMonitor:
         return frame
 
     def stop_monitor(self):
+        """停止监控"""
         self.is_running = False
 
     def run_monitor(self):
+        """监控主循环（通用）"""
         try:
             self.load_config()
             self.init_grid_regions()
         except Exception as e:
-            messagebox.showerror("初始化失败", f"加载配置出错: {str(e)}")
+            messagebox.showerror("Initialization Failed", f"Config load error: {str(e)}")
             return
 
         # 初始化摄像头
@@ -384,12 +427,13 @@ class GridMonitor:
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
 
-        # 记录程序启动时间（用于5秒延迟）
+        # 记录启动时间
         self.start_time = time.time()
 
         # 创建监控窗口
+        window_title = "Hearing Aid Grid Monitor (Abnormal: Red)" if self.monitor_type == "hearing_aid" else "Charging Case Grid Monitor"
         self.monitor_win = Toplevel(self.root)
-        self.monitor_win.title(f"{('助听器' if self.monitor_type == 'hearing_aid' else '充电盒')}网格监控")
+        self.monitor_win.title(window_title)
         self.monitor_win.geometry("900x600")
         self.monitor_win.protocol("WM_DELETE_WINDOW", self.stop_monitor)
 
@@ -398,11 +442,11 @@ class GridMonitor:
         video_label.pack(side="top", padx=10, pady=10, fill="both", expand=True)
 
         # 停止按钮
-        stop_btn = Button(self.monitor_win, text="停止监控", bg="#f44336", fg="white",
-                          font=("微软雅黑", 12, "bold"), command=self.stop_monitor)
+        stop_btn = Button(self.monitor_win, text="Stop Monitor", bg="#f44336", fg="white",
+                          font=("Microsoft YaHei", 12, "bold"), command=self.stop_monitor)
         stop_btn.pack(side="bottom", fill="x", padx=10, pady=10)
 
-        # 监控主循环
+        # 主循环
         self.is_running = True
         self.last_analysis_time = time.time()
         
@@ -414,16 +458,16 @@ class GridMonitor:
             # 透视变换校正
             frame = cv2.warpPerspective(raw, self.M, self.size) if self.M is not None else raw
 
-            # 检测亮光
+            # 检测亮度/异常
             bright_grids, grid_brightness, _ = self.calculate_grid_bright(frame)
             
-            # 清理缓存（仅充电盒）
+            # 清理缓存
             self.clean_expired_cache()
 
-            # 记录原始亮度日志（仅充电盒）
+            # 记录日志（助听器/充电盒均执行）
             self.log_change(bright_grids, grid_brightness)
             
-            # 仅充电盒：过了5秒延迟后，每4秒分析一次状态
+            # 充电盒专属：定时状态分析
             current_time = time.time()
             if (self.monitor_type == "charging_case" and 
                 current_time - self.start_time >= START_DELAY and 
@@ -452,18 +496,19 @@ class GridMonitor:
         self.monitor_win.destroy()
 
 def start_hearing_aid_monitor(root):
-    """启动助听器网格监控（无逐格状态分析）"""
+    """启动助听器监控（含异常日志）"""
     monitor = GridMonitor(root, "hearing_aid")
     threading.Thread(target=monitor.run_monitor, daemon=True).start()
 
 def start_charging_case_monitor(root):
-    """启动充电盒网格监控（含20格逐状态分析）"""
+    """启动充电盒监控"""
     monitor = GridMonitor(root, "charging_case")
     threading.Thread(target=monitor.run_monitor, daemon=True).start()
 
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()  # 隐藏主窗口
-    # 测试充电盒监控（仅此场景有逐格状态分析）
-    start_charging_case_monitor(root)
+    # 可选择启动对应监控
+    # start_hearing_aid_monitor(root)  # 助听器监控
+    start_charging_case_monitor(root)  # 充电盒监控
     root.mainloop()
