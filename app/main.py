@@ -5,7 +5,6 @@ import threading
 # 业务模块导入
 import detection_system
 from border_adjuster import adjust_charging_case_border
-import calibration_tool
 import grid_monitor
 # 导入日志分析工具（充电盒+助听器）
 import charging_log_analysis_tool
@@ -33,12 +32,8 @@ def main_gui():
     # 按钮样式配置
     btn_style = {"font": ("微软雅黑", 12), "width": 25, "pady": 5}
 
-    # 1. 镜头标定
-    tk.Button(root, text="🔧 镜头透视标定", bg="#2196F3", fg="white",
-              command=calibration_tool.start_calibration, **btn_style).pack(pady=10)
-
     # 2. 手动调整黑边
-    tk.Button(root, text="📐 手动调整底部区域", bg="#607D8B", fg="white",
+    tk.Button(root, text="📐 手动调整充电盒区域", bg="#607D8B", fg="white",
               command=adjust_charging_case_border, **btn_style).pack(pady=10)
 
     # 3. 实时检测
@@ -51,7 +46,7 @@ def main_gui():
 
     # 5. 预览 White
     tk.Button(root, text="显示充电盒托盘预览", bg="#795548", fg="white",
-              command=lambda: run_detection("white"), **btn_style).pack(pady=5)
+              command=lambda: run_detection("charging_case"), **btn_style).pack(pady=5)
 
     # 6. 网格监控按钮
     tk.Button(root, text="📹 启动助听器网格监控", bg="#FF9800", fg="white",

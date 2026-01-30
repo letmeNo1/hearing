@@ -6,7 +6,9 @@ from tkinter import messagebox
 
 # 常量定义
 PARAMS_FILE = "calibration_params.json"
-CHARGING_CASE_BORDER_DATA = "charging_case_border.json"
+CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CHARGING_CASE_BORDER_DATA = os.path.join(CURRENT_SCRIPT_DIR, "charging_case_border.json")
 
 
 def adjust_charging_case_border():
