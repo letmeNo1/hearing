@@ -8,9 +8,8 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 
-# ========== 核心修改：获取当前脚本执行目录，拼接配置文件路径 ==========
+# ========== 仅保留边框配置文件路径（移除透视变换配置文件） ==========
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARAMS_FILE = os.path.join(CURRENT_SCRIPT_DIR, "calibration_params.json")
 HEARING_AID_BORDER_DATA = os.path.join(CURRENT_SCRIPT_DIR, "hearing_aid_border.json")
 CHARGING_CASE_BORDER_DATA = os.path.join(CURRENT_SCRIPT_DIR, "charging_case_border.json")
 
@@ -18,27 +17,11 @@ CHARGING_CASE_BORDER_DATA = os.path.join(CURRENT_SCRIPT_DIR, "charging_case_bord
 class DetectionSystem:
     def __init__(self, root):
         self.root = root  # 主窗口对象
-        self.M = None
-        self.size = (1920, 1080)
         self.is_running = False
         self.preview_win = None
         self.cap = None
         self.video_label = None  # 保存Label引用，便于检查
         self.gui_lock = threading.Lock()  # 加锁保护GUI操作
-
-    def load_config(self):
-        """加载透视变换参数（仅提示，不终止）"""
-        if os.path.exists(PARAMS_FILE):
-            with open(PARAMS_FILE, 'r') as f:
-                d = json.load(f)
-                self.M = np.array(d['perspective_matrix'])
-                self.size = tuple(d['cropped_size'])
-        else:
-            # 主线程弹提示（避免子线程弹框问题）
-            self.root.after(0, lambda: messagebox.showwarning(
-                "配置缺失", 
-                f"未找到透视标定参数文件：\n{PARAMS_FILE}\n请手动执行「镜头透视标定」功能"
-            ))
 
     def draw_hearing_aid(self, img, r):
         """绘制助听器网格（4行14列）"""
@@ -136,9 +119,6 @@ class DetectionSystem:
                 self.clean_resources()
                 return
 
-        # 1.3 加载透视参数（非核心错误，仅提示）
-        self.load_config()
-
         # ========== 步骤2：所有前置检查通过，才创建预览窗口 ==========
         with self.gui_lock:
             self.is_running = True
@@ -183,20 +163,22 @@ class DetectionSystem:
                 self.clean_resources()
                 break
 
-            # 透视变换校正
-            frame = cv2.warpPerspective(raw, self.M, self.size) if self.M is not None else raw
+            # ========== 核心修改：移除透视变换，直接使用原始帧 ==========
+            frame = raw
 
             if mode == "detect":
-                # 检测模式：自动标定助听器边框
+                # 检测模式：自动标定助听器边框（适配原始帧尺寸）
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 binary = cv2.adaptiveThreshold(cv2.GaussianBlur(gray, (7, 7), 0), 255, 1, 1, 11, 2)
                 cnts, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 target = None
+                # 适配原始帧尺寸计算面积占比（1920*1080）
+                frame_area = frame.shape[1] * frame.shape[0]  # width * height
                 for c in cnts:
                     if cv2.contourArea(c) < 5000:
                         continue
                     x, y, w, h = cv2.boundingRect(c)
-                    area_ratio = (w * h / (self.size[0] * self.size[1])) * 100
+                    area_ratio = (w * h / frame_area) * 100
                     if 30.0 <= area_ratio <= 32.0:
                         target = (x, y, w, h)
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -228,7 +210,7 @@ class DetectionSystem:
                     self.clean_resources()
                     break
 
-            # 转换图像并通过主线程更新（核心修复：避免子线程直接操作GUI）
+            # 转换图像并通过主线程更新
             img_show = cv2.resize(frame, (960, 540))
             img_rgb = cv2.cvtColor(img_show, cv2.COLOR_BGR2RGB)
             img_pil = Image.fromarray(img_rgb)

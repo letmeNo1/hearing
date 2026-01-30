@@ -9,15 +9,15 @@ import tkinter as tk
 import tkinter.messagebox as messagebox
 from PIL import Image, ImageTk
 
-# 配置常量
-PARAMS_FILE = "calibration_params.json"
-HEARING_AID_BORDER_DATA = "hearing_aid_border.json"
-CHARGING_CASE_BORDER_DATA = "charging_case_border.json"
+# 配置常量（删除 PARAMS_FILE 透视参数文件）
+CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+HEARING_AID_BORDER_DATA = os.path.join(CURRENT_SCRIPT_DIR, "hearing_aid_border.json")
+CHARGING_CASE_BORDER_DATA = os.path.join(CURRENT_SCRIPT_DIR, "charging_case_border.json")
 # 新增：助听器日志根目录
 HEARING_AID_BRIGHTNESS_ROOT_DIR = "hearing_aid_brightness_log"
 CHARGING_BRIGHTNESS_ROOT_DIR = "brightness_logs"  # 充电盒亮度日志根文件夹
 CHARGING_ROOT_DIR = "charging_log"               # 充电盒状态日志根文件夹
-CAM_WIDTH, CAM_HEIGHT = 1920, 1080
+CAM_WIDTH, CAM_HEIGHT = 1920, 1080  # 原始帧尺寸（替代透视后的size）
 
 # 亮度检测配置（通用）
 BRIGHT_THRESHOLD = 35
@@ -43,8 +43,7 @@ class GridMonitor:
         self.monitor_type = monitor_type
         self.is_running = False
         self.cap = None
-        self.M = None
-        self.size = (CAM_WIDTH, CAM_HEIGHT)
+        # 核心修改1：删除透视变换相关变量（self.M/self.size）
         self.border_rect = None
         self.grid_regions = []
         self.monitor_win = None
@@ -142,13 +141,7 @@ class GridMonitor:
         return os.path.join(restart_dir, f"{segment}.json")
 
     def load_config(self):
-        """加载校准参数和边框配置"""
-        if os.path.exists(PARAMS_FILE):
-            with open(PARAMS_FILE, 'r') as f:
-                d = json.load(f)
-                self.M = np.array(d['perspective_matrix'])
-                self.size = tuple(d['cropped_size'])
-
+        """核心修改2：删除透视参数加载，仅保留边框配置加载"""
         # 加载对应设备的边框配置
         border_file = HEARING_AID_BORDER_DATA if self.monitor_type == "hearing_aid" else CHARGING_CASE_BORDER_DATA
         if os.path.exists(border_file):
@@ -159,13 +152,13 @@ class GridMonitor:
             raise Exception(f"Border config file not found for {self.monitor_type}: {border_file}")
 
     def init_grid_regions(self):
-        """初始化网格区域（区分设备类型）"""
+        """初始化网格区域（区分设备类型，适配原始帧尺寸）"""
         self.grid_regions.clear()
         x, y, w, h = self.border_rect
         index = 0
 
         if self.monitor_type == "hearing_aid":
-            # 助听器：4行14列 = 56格
+            # 助听器：4行14列 = 56格（逻辑不变，基于原始帧边框）
             y_off = int(h * 0.05)
             ys, ye, nh = y + y_off, y + h - y_off, h - 2 * y_off
             gw, xs = w / 14, int(x + (w / 14) / 2)
@@ -179,7 +172,7 @@ class GridMonitor:
                     index += 1
 
         elif self.monitor_type == "charging_case":
-            # 充电盒：4行5列 = 20格
+            # 充电盒：4行5列 = 20格（逻辑不变，基于原始帧边框）
             gw = w / 5    # 列宽 = 总宽度 / 5
             gh = h / 4    # 行高 = 总高度 / 4
             for row in range(4):
@@ -192,7 +185,7 @@ class GridMonitor:
                     index += 1
 
     def calculate_grid_bright(self, frame):
-        """计算网格亮度（通用逻辑）"""
+        """计算网格亮度（通用逻辑，适配原始帧）"""
         bright_grids = []  # 异常网格（助听器）/亮网格（充电盒）
         grid_brightness = []
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -372,7 +365,7 @@ class GridMonitor:
             messagebox.showwarning("Log Write Failed", msg)
 
     def draw_grid_and_bright(self, frame, bright_grids):
-        """绘制网格和异常/亮格（通用）"""
+        """绘制网格和异常/亮格（通用，适配原始帧）"""
         x, y, w, h = self.border_rect
         # 绘制网格线（区分设备）
         if self.monitor_type == "hearing_aid":
@@ -412,7 +405,7 @@ class GridMonitor:
         self.is_running = False
 
     def run_monitor(self):
-        """监控主循环（通用）"""
+        """监控主循环（核心修改3：移除透视变换，使用原始帧）"""
         try:
             self.load_config()
             self.init_grid_regions()
@@ -455,8 +448,8 @@ class GridMonitor:
             if not ret:
                 break
 
-            # 透视变换校正
-            frame = cv2.warpPerspective(raw, self.M, self.size) if self.M is not None else raw
+            # 核心修改4：删除透视变换，直接使用原始帧
+            frame = raw
 
             # 检测亮度/异常
             bright_grids, grid_brightness, _ = self.calculate_grid_bright(frame)
@@ -510,5 +503,5 @@ if __name__ == "__main__":
     root.withdraw()  # 隐藏主窗口
     # 可选择启动对应监控
     # start_hearing_aid_monitor(root)  # 助听器监控
-    start_charging_case_monitor(root)  # 充电盒监控
+    # start_charging_case_monitor(root)  # 充电盒监控
     root.mainloop()
