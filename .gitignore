@@ -1,3 +1,4 @@
 app/__pycache__/preview_worker.cpython-39.pyc
 *.pyc
 /brightness_logs
+charging_grid_analysis_report.txt
